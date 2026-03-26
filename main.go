@@ -12,6 +12,7 @@ const SEPARATOR = "\r\n"
 
 type Request struct {
 	RequestLine RequestLine
+	Headers     map[string]string
 }
 
 type RequestLine struct {
@@ -53,7 +54,21 @@ func handleConnection(conn net.Conn) {
 		return
 	}
 
-	body := fmt.Sprintf("Parsed!\nMethod: %s\nTarget: %s\nVersion: %s\n", reqLine.HttpMethod, reqLine.RequestTarget, reqLine.HttpVersion)
+	headers, err := parseHeaders(reader)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	req := Request{RequestLine: *reqLine, Headers: headers}
+
+	body := "Parsed!\n"
+	body += fmt.Sprintf("Method: %s\nTarget: %s\nVersion: %s\n", req.RequestLine.HttpMethod, req.RequestLine.RequestTarget, req.RequestLine.HttpVersion)
+	body += fmt.Sprintf("Headers found: %d\n", len(req.Headers))
+	for name, value := range req.Headers {
+		body += fmt.Sprintf("%s: %s\n", name, value)
+	}
+
 	statusLine := "HTTP/1.1 200 OK"
 	lenHeader := fmt.Sprintf("Content-Length: %d", len(body))
 	typeHeader := "Content-Type: text/plain"
@@ -88,4 +103,36 @@ func parseRequestLine(reader *bufio.Reader) (*RequestLine, error) {
 		RequestTarget: parts[1],
 		HttpVersion:   parts[2],
 	}, nil
+}
+
+func parseHeaders(reader *bufio.Reader) (map[string]string, error) {
+	headers := make(map[string]string)
+
+	for {
+		rawLine, err := reader.ReadString('\n')
+		if err != nil {
+			return nil, err
+		}
+
+		trimmedLine, _, found := strings.Cut(rawLine, SEPARATOR)
+		if !found {
+			return nil, fmt.Errorf("parsing error: no separator found")
+		}
+
+		if len(trimmedLine) == 0 {
+			break
+		}
+
+		fieldName, fieldValue, found := strings.Cut(trimmedLine, ":")
+		if !found {
+			return nil, fmt.Errorf("parsing error: no colon found")
+		}
+
+		fieldName = strings.ToLower(fieldName)
+		fieldValue = strings.TrimSpace(fieldValue)
+
+		headers[fieldName] = fieldValue
+	}
+
+	return headers, nil
 }
