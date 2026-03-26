@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"log"
 	"net"
@@ -44,76 +45,47 @@ func main() {
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
 
-	buffer := make([]byte, 8)
-	var request string
-	var reqLine *RequestLine
+	reader := bufio.NewReader(conn)
 
-	for {
-		n, err := conn.Read(buffer)
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		// append the new chunk
-		request += string(buffer[:n])
-
-		// try to parse
-		parsedLine, restOfMsg, err := parseRequestLine(request)
-		if err != nil {
-			log.Println(err)
-			return
-		}
-
-		if parsedLine != nil {
-			reqLine = parsedLine
-			request = restOfMsg
-			break
-		}
+	reqLine, err := parseRequestLine(reader)
+	if err != nil {
+		log.Println(err)
+		return
 	}
-	/*
-		n, err := conn.Read(buffer)
-		if err != nil {
-			log.Println(err)
-			return
-		}
 
-		request := string(buffer[:n])
-		reqLine, restOfMsg, err := parseRequestLine(request)
-		if err != nil {
-			log.Println(err)
-			return
-		}
-	*/
 	body := fmt.Sprintf("Parsed!\nMethod: %s\nTarget: %s\nVersion: %s\n", reqLine.HttpMethod, reqLine.RequestTarget, reqLine.HttpVersion)
 	statusLine := "HTTP/1.1 200 OK"
 	lenHeader := fmt.Sprintf("Content-Length: %d", len(body))
 	typeHeader := "Content-Type: text/plain"
 
 	res := fmt.Sprintf("%s\r\n%s\r\n%s\r\n\r\n%s", statusLine, lenHeader, typeHeader, body)
-	_, err := conn.Write([]byte(res))
+	_, err = conn.Write([]byte(res))
 	if err != nil {
 		log.Println(err)
 		return
 	}
 }
 
-func parseRequestLine(request string) (*RequestLine, string, error) {
-	idx := strings.Index(request, SEPARATOR)
-	if idx == -1 {
-		return nil, request, nil
+func parseRequestLine(reader *bufio.Reader) (*RequestLine, error) {
+	rawLine, err := reader.ReadString('\n')
+	if err != nil {
+		return nil, err
 	}
 
-	line := request[:idx]
-	restOfMsg := request[idx+len(SEPARATOR):]
+	trimmedLine, _, found := strings.Cut(rawLine, SEPARATOR)
+	if !found {
+		return nil, fmt.Errorf("parsing error: no separator found")
+	}
 
-	parts := strings.Split(line, " ")
+	parts := strings.Split(trimmedLine, " ")
+
 	if len(parts) != 3 {
-		return nil, restOfMsg, fmt.Errorf("parsing error: split by single space failed")
+		return nil, fmt.Errorf("parsing error: split by single space failed")
 	}
 
 	return &RequestLine{
 		HttpMethod:    parts[0],
 		RequestTarget: parts[1],
 		HttpVersion:   parts[2],
-	}, restOfMsg, nil
+	}, nil
 }
