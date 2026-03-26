@@ -141,7 +141,13 @@ func parseHeaders(reader *bufio.Reader) (map[string]string, error) {
 		fieldName = strings.ToLower(fieldName)
 		fieldValue = strings.TrimSpace(fieldValue)
 
-		headers[fieldName] = fieldValue
+		// handle multiple headers with the same field name
+		existingValue, found := headers[fieldName] // check if header already exists
+		if found {                                 // header already exists, concatenate values
+			headers[fieldName] = existingValue + ", " + fieldValue
+		} else { // header does not exist, add it to the map
+			headers[fieldName] = fieldValue
+		}
 	}
 
 	return headers, nil
