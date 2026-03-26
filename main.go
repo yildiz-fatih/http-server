@@ -3,8 +3,10 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"log"
 	"net"
+	"strconv"
 	"strings"
 )
 
@@ -13,6 +15,7 @@ const SEPARATOR = "\r\n"
 type Request struct {
 	RequestLine RequestLine
 	Headers     map[string]string
+	Body        []byte
 }
 
 type RequestLine struct {
@@ -60,20 +63,27 @@ func handleConnection(conn net.Conn) {
 		return
 	}
 
-	req := Request{RequestLine: *reqLine, Headers: headers}
-
-	body := "Parsed!\n"
-	body += fmt.Sprintf("Method: %s\nTarget: %s\nVersion: %s\n", req.RequestLine.HttpMethod, req.RequestLine.RequestTarget, req.RequestLine.HttpVersion)
-	body += fmt.Sprintf("Headers found: %d\n", len(req.Headers))
-	for name, value := range req.Headers {
-		body += fmt.Sprintf("%s: %s\n", name, value)
+	body, err := parseBody(reader, headers)
+	if err != nil {
+		log.Println(err)
+		return
 	}
 
+	req := Request{RequestLine: *reqLine, Headers: headers, Body: body}
+
+	resBody := "Parsed!\n"
+	resBody += fmt.Sprintf("Method: %s\nTarget: %s\nVersion: %s\n", req.RequestLine.HttpMethod, req.RequestLine.RequestTarget, req.RequestLine.HttpVersion)
+	resBody += fmt.Sprintf("Headers found: %d\n", len(req.Headers))
+	for name, value := range req.Headers {
+		resBody += fmt.Sprintf("%s: %s\n", name, value)
+	}
+	resBody += fmt.Sprintf("Body:\n%s", req.Body)
+
 	statusLine := "HTTP/1.1 200 OK"
-	lenHeader := fmt.Sprintf("Content-Length: %d", len(body))
+	lenHeader := fmt.Sprintf("Content-Length: %d", len(resBody))
 	typeHeader := "Content-Type: text/plain"
 
-	res := fmt.Sprintf("%s\r\n%s\r\n%s\r\n\r\n%s", statusLine, lenHeader, typeHeader, body)
+	res := fmt.Sprintf("%s\r\n%s\r\n%s\r\n\r\n%s", statusLine, lenHeader, typeHeader, resBody)
 	_, err = conn.Write([]byte(res))
 	if err != nil {
 		log.Println(err)
@@ -135,4 +145,25 @@ func parseHeaders(reader *bufio.Reader) (map[string]string, error) {
 	}
 
 	return headers, nil
+}
+
+func parseBody(reader *bufio.Reader, headers map[string]string) ([]byte, error) {
+	contentLenStr, found := headers["content-length"]
+	if !found {
+		return nil, nil
+	}
+
+	contentLen, err := strconv.Atoi(contentLenStr)
+	if err != nil {
+		return nil, fmt.Errorf("parsing error: invalid content-length")
+	}
+
+	body := make([]byte, contentLen)
+
+	_, err = io.ReadFull(reader, body)
+	if err != nil {
+		return nil, fmt.Errorf("parsing error: failed to read body")
+	}
+
+	return body, nil
 }
