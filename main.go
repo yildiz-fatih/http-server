@@ -44,32 +44,53 @@ func main() {
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
 
-	buffer := make([]byte, 1024)
+	buffer := make([]byte, 8)
+	var request string
+	var reqLine *RequestLine
 
-	n, err := conn.Read(buffer)
-	if err != nil {
-		log.Println(err)
-		return
+	for {
+		n, err := conn.Read(buffer)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		// append the new chunk
+		request += string(buffer[:n])
+
+		// try to parse
+		parsedLine, restOfMsg, err := parseRequestLine(request)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+
+		if parsedLine != nil {
+			reqLine = parsedLine
+			request = restOfMsg
+			break
+		}
 	}
+	/*
+		n, err := conn.Read(buffer)
+		if err != nil {
+			log.Println(err)
+			return
+		}
 
-	request := string(buffer[:n])
-	reqLine, restOfMsg, err := parseRequestLine(request)
-	if err != nil {
-		log.Println(err)
-		return
-	}
-
-	// test request line parsing
-	fmt.Printf("Parsed:\nMethod: %s, Target: %s, Version: %s\n", reqLine.HttpMethod, reqLine.RequestTarget, reqLine.HttpVersion)
-	fmt.Printf("Rest of the request:\n%s\n", restOfMsg)
-
-	body := fmt.Sprintf("You sent:\n%s", buffer[:n])
+		request := string(buffer[:n])
+		reqLine, restOfMsg, err := parseRequestLine(request)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+	*/
+	body := fmt.Sprintf("Parsed!\nMethod: %s\nTarget: %s\nVersion: %s\n", reqLine.HttpMethod, reqLine.RequestTarget, reqLine.HttpVersion)
 	statusLine := "HTTP/1.1 200 OK"
 	lenHeader := fmt.Sprintf("Content-Length: %d", len(body))
 	typeHeader := "Content-Type: text/plain"
 
 	res := fmt.Sprintf("%s\r\n%s\r\n%s\r\n\r\n%s", statusLine, lenHeader, typeHeader, body)
-	_, err = conn.Write([]byte(res))
+	_, err := conn.Write([]byte(res))
 	if err != nil {
 		log.Println(err)
 		return
@@ -79,7 +100,7 @@ func handleConnection(conn net.Conn) {
 func parseRequestLine(request string) (*RequestLine, string, error) {
 	idx := strings.Index(request, SEPARATOR)
 	if idx == -1 {
-		return nil, request, fmt.Errorf("parsing error: no CRLF found")
+		return nil, request, nil
 	}
 
 	line := request[:idx]
