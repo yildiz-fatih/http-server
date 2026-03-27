@@ -85,7 +85,11 @@ func handleConnection(conn net.Conn) {
 			return
 		}
 	case "/echo":
-		// do echo
+		err := handleEcho(conn, &req)
+		if err != nil {
+			log.Println(err)
+			return
+		}
 	default:
 		// serve files from "root"
 	}
@@ -215,6 +219,24 @@ func handlePing(conn net.Conn, req *Request) error {
 		StatusCode: "200 OK",
 		Headers:    map[string]string{"Content-Type": "text/plain"},
 		Body:       []byte("pong"),
+	}
+
+	return writeResponse(conn, &res)
+}
+
+func handleEcho(conn net.Conn, req *Request) error {
+	resBody := ""
+	resBody += fmt.Sprintf("%s %s %s\r\n", req.RequestLine.HttpMethod, req.RequestLine.RequestTarget, req.RequestLine.HttpVersion)
+	for name, value := range req.Headers {
+		resBody += fmt.Sprintf("%s: %s\r\n", name, value)
+	}
+	resBody += "\r\n"
+	resBody += string(req.Body)
+
+	res := Response{
+		StatusCode: "200 OK",
+		Headers:    map[string]string{"Content-Type": "text/plain"},
+		Body:       []byte(resBody),
 	}
 
 	return writeResponse(conn, &res)
