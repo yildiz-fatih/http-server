@@ -24,6 +24,12 @@ type RequestLine struct {
 	HttpVersion   string
 }
 
+type Response struct {
+	StatusCode string
+	Headers    map[string]string
+	Body       []byte
+}
+
 func main() {
 	port := 8080
 
@@ -71,23 +77,17 @@ func handleConnection(conn net.Conn) {
 
 	req := Request{RequestLine: *reqLine, Headers: headers, Body: body}
 
-	resBody := "Parsed!\n"
-	resBody += fmt.Sprintf("Method: %s\nTarget: %s\nVersion: %s\n", req.RequestLine.HttpMethod, req.RequestLine.RequestTarget, req.RequestLine.HttpVersion)
-	resBody += fmt.Sprintf("Headers found: %d\n", len(req.Headers))
-	for name, value := range req.Headers {
-		resBody += fmt.Sprintf("%s: %s\n", name, value)
-	}
-	resBody += fmt.Sprintf("Body:\n%s", req.Body)
-
-	statusLine := "HTTP/1.1 200 OK"
-	lenHeader := fmt.Sprintf("Content-Length: %d", len(resBody))
-	typeHeader := "Content-Type: text/plain"
-
-	res := fmt.Sprintf("%s\r\n%s\r\n%s\r\n\r\n%s", statusLine, lenHeader, typeHeader, resBody)
-	_, err = conn.Write([]byte(res))
-	if err != nil {
-		log.Println(err)
-		return
+	switch req.RequestLine.RequestTarget {
+	case "/ping":
+		err := handlePing(conn, &req)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+	case "/echo":
+		// do echo
+	default:
+		// serve files from "root"
 	}
 }
 
@@ -172,4 +172,50 @@ func parseBody(reader *bufio.Reader, headers map[string]string) ([]byte, error) 
 	}
 
 	return body, nil
+}
+
+func writeResponse(conn net.Conn, res *Response) error {
+	out := ""
+
+	httpVersion := "HTTP/1.1"
+	statusLine := fmt.Sprintf("%s %s", httpVersion, res.StatusCode)
+
+	out += statusLine + "\r\n"
+
+	out += fmt.Sprintf("Content-Length: %d\r\n", len(res.Body))
+
+	for name, value := range res.Headers {
+		out += fmt.Sprintf("%s: %s\r\n", name, value)
+	}
+	out += "\r\n"
+
+	out += string(res.Body)
+
+	_, err := conn.Write([]byte(out))
+	return err
+}
+
+func handlePing(conn net.Conn, req *Request) error {
+	if req.RequestLine.HttpMethod != "GET" {
+		res := Response{
+			StatusCode: "405 Method Not Allowed",
+			Headers:    map[string]string{},
+			Body:       []byte{},
+		}
+
+		err := writeResponse(conn, &res)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	}
+
+	res := Response{
+		StatusCode: "200 OK",
+		Headers:    map[string]string{"Content-Type": "text/plain"},
+		Body:       []byte("pong"),
+	}
+
+	return writeResponse(conn, &res)
 }
