@@ -117,48 +117,47 @@ func main() {
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
 
-	reader := bufio.NewReader(conn)
-
-	reqLine, err := parseRequestLine(reader)
+	req, err := parseRequest(bufio.NewReader(conn))
 	if err != nil {
 		log.Println(err)
 		return
+	}
+
+	err = routeRequest(conn, req)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+}
+
+func routeRequest(conn net.Conn, req *Request) error {
+	switch req.RequestLine.RequestTarget {
+	case "/ping":
+		return handlePing(conn, req)
+	case "/echo":
+		return handleEcho(conn, req)
+	default:
+		return handleFile(conn, req)
+	}
+}
+
+func parseRequest(reader *bufio.Reader) (*Request, error) {
+	reqLine, err := parseRequestLine(reader)
+	if err != nil {
+		return nil, err
 	}
 
 	headers, err := parseHeaders(reader)
 	if err != nil {
-		log.Println(err)
-		return
+		return nil, err
 	}
 
 	body, err := parseBody(reader, headers)
 	if err != nil {
-		log.Println(err)
-		return
+		return nil, err
 	}
 
-	req := Request{RequestLine: *reqLine, Headers: headers, Body: body}
-
-	switch req.RequestLine.RequestTarget {
-	case "/ping":
-		err := handlePing(conn, &req)
-		if err != nil {
-			log.Println(err)
-			return
-		}
-	case "/echo":
-		err := handleEcho(conn, &req)
-		if err != nil {
-			log.Println(err)
-			return
-		}
-	default:
-		err := handleFile(conn, &req)
-		if err != nil {
-			log.Println(err)
-			return
-		}
-	}
+	return &Request{RequestLine: *reqLine, Headers: headers, Body: body}, nil
 }
 
 func parseRequestLine(reader *bufio.Reader) (*RequestLine, error) {
