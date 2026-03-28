@@ -2,13 +2,64 @@ package main
 
 import (
 	"bufio"
+	"bytes"
+	"errors"
 	"fmt"
+	"html/template"
 	"io"
 	"log"
+	"mime"
 	"net"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
+
+const errorTemplate = `
+<!DOCTYPE HTML>
+<html lang="en">
+   <head>
+      <meta charset="utf-8">
+      <style type="text/css">
+         :root {
+         color-scheme: light dark;
+         }
+      </style>
+      <title>Error response</title>
+   </head>
+   <body>
+      <h1>Error response</h1>
+      <p>Error code: {{ .Code }}</p>
+      <p>Message: {{ .Message }}</p>
+   </body>
+</html>
+`
+
+const dirListingTemplate = `
+<!DOCTYPE HTML>
+<html lang="en">
+   <head>
+      <meta charset="utf-8">
+      <style type="text/css">
+         :root {
+         color-scheme: light dark;
+         }
+      </style>
+      <title>Directory listing for {{ .Path }}</title>
+   </head>
+   <body>
+      <h1>Directory listing for {{ .Path }}</h1>
+      <hr>
+      <ul>
+        {{ range .Files }}
+         <li><a href="{{ . }}">{{ . }}</a></li>
+        {{ end }}
+      </ul>
+      <hr>
+   </body>
+</html>
+`
 
 const SEPARATOR = "\r\n"
 
@@ -91,7 +142,11 @@ func handleConnection(conn net.Conn) {
 			return
 		}
 	default:
-		// serve files from "root"
+		err := handleFile(conn, &req)
+		if err != nil {
+			log.Println(err)
+			return
+		}
 	}
 }
 
@@ -240,4 +295,127 @@ func handleEcho(conn net.Conn, req *Request) error {
 	}
 
 	return writeResponse(conn, &res)
+}
+
+func handleFile(conn net.Conn, req *Request) error {
+	root, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+
+	targetFilename := filepath.Join(root, filepath.Clean(req.RequestLine.RequestTarget))
+
+	targetFileInfo, err := os.Stat(targetFilename)
+	if err != nil {
+		// return 404 page
+		type ErrorPage struct {
+			Code    string
+			Message string
+		}
+
+		tmpl, err := template.New("error").Parse(errorTemplate)
+		if err != nil {
+			return err
+		}
+
+		var buf bytes.Buffer
+		err = tmpl.Execute(&buf, ErrorPage{
+			Code:    "404 Not Found",
+			Message: "The requested resource was not found on this server.",
+		})
+		if err != nil {
+			return err
+		}
+
+		res := Response{
+			StatusCode: "404 Not Found",
+			Headers:    map[string]string{"Content-Type": "text/html"},
+			Body:       buf.Bytes(),
+		}
+		return writeResponse(conn, &res)
+	}
+
+	if targetFileInfo.IsDir() {
+		// if you want a directory, put a slash at the end of the url
+		if req.RequestLine.RequestTarget[len(req.RequestLine.RequestTarget)-1] != '/' { // if you don't
+			// i'll redirect you to the url with the slash at the end
+			res := Response{
+				StatusCode: "301 Moved Permanently",
+				Headers:    map[string]string{"Location": req.RequestLine.RequestTarget + "/"},
+				Body:       []byte{},
+			}
+			return writeResponse(conn, &res)
+		}
+
+		// check for index.html in the directory
+		_, err := os.Stat(filepath.Join(targetFilename, "index.html"))
+		if !errors.Is(err, os.ErrNotExist) {
+			content, err := os.ReadFile(filepath.Join(targetFilename, "index.html"))
+			if err != nil {
+				return err
+			}
+
+			res := Response{
+				StatusCode: "200 OK",
+				Headers:    map[string]string{"Content-Type": "text/html"},
+				Body:       content,
+			}
+			return writeResponse(conn, &res)
+		}
+
+		// return directory listing
+		type DirListingPage struct {
+			Path  string
+			Files []string
+		}
+
+		tmpl, err := template.New("listing").Parse(dirListingTemplate)
+		if err != nil {
+			return err
+		}
+
+		entries, err := os.ReadDir(targetFilename)
+		if err != nil {
+			return err
+		}
+
+		var files []string
+		for _, entry := range entries {
+			files = append(files, entry.Name())
+		}
+
+		var buf bytes.Buffer
+		err = tmpl.Execute(&buf, DirListingPage{
+			Path:  req.RequestLine.RequestTarget,
+			Files: files,
+		})
+		if err != nil {
+			return err
+		}
+
+		res := Response{
+			StatusCode: "200 OK",
+			Headers:    map[string]string{"Content-Type": "text/html"},
+			Body:       buf.Bytes(),
+		}
+		return writeResponse(conn, &res)
+	} else {
+		contentType := mime.TypeByExtension(filepath.Ext(targetFilename))
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+
+		resBody, err := os.ReadFile(targetFilename)
+		if err != nil {
+			return err
+		}
+
+		res := Response{
+			StatusCode: "200 OK",
+			Headers:    map[string]string{"Content-Type": contentType},
+			Body:       resBody,
+		}
+
+		return writeResponse(conn, &res)
+	}
 }
