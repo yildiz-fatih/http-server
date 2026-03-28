@@ -87,16 +87,11 @@ type Response struct {
 	Body       []byte
 }
 
+// parse templates at startup
 var (
-	errorTemplate      *template.Template
-	dirListingTemplate *template.Template
-)
-
-func init() {
-	// parse templates
-	errorTemplate = template.Must(template.New("error").Parse(errorTemplateHTML))
+	errorTemplate      = template.Must(template.New("error").Parse(errorTemplateHTML))
 	dirListingTemplate = template.Must(template.New("dirListing").Parse(dirListingTemplateHTML))
-}
+)
 
 func main() {
 	cwd, err := os.Getwd()
@@ -179,10 +174,7 @@ func parseRequestLine(reader *bufio.Reader) (*RequestLine, error) {
 		return nil, err
 	}
 
-	trimmedLine, _, found := strings.Cut(rawLine, SEPARATOR)
-	if !found {
-		return nil, fmt.Errorf("parsing error: no separator found")
-	}
+	trimmedLine := strings.TrimSuffix(rawLine, SEPARATOR)
 
 	parts := strings.Split(trimmedLine, " ")
 
@@ -288,12 +280,7 @@ func handlePing(conn net.Conn, req *Request) error {
 			Body:       []byte{},
 		}
 
-		err := writeResponse(conn, &res)
-		if err != nil {
-			return err
-		}
-
-		return nil
+		return writeResponse(conn, &res)
 	}
 
 	res := Response{
@@ -329,13 +316,8 @@ func handleFile(conn net.Conn, req *Request) error {
 	targetFileInfo, err := os.Stat(targetFilename)
 	if err != nil {
 		// return 404 page
-		type ErrorPage struct {
-			Code    string
-			Message string
-		}
-
 		var buf bytes.Buffer
-		err = errorTemplate.Execute(&buf, ErrorPage{
+		err = errorTemplate.Execute(&buf, struct{ Code, Message string }{
 			Code:    "404 Not Found",
 			Message: "The requested resource was not found on this server.",
 		})
@@ -353,7 +335,7 @@ func handleFile(conn net.Conn, req *Request) error {
 
 	if targetFileInfo.IsDir() {
 		// if you want a directory, put a slash at the end of the url
-		if req.RequestLine.RequestTarget[len(req.RequestLine.RequestTarget)-1] != '/' { // if you don't
+		if !strings.HasSuffix(req.RequestLine.RequestTarget, "/") { // if you don't
 			// i'll redirect you to the url with the slash at the end
 			res := Response{
 				StatusCode: "301 Moved Permanently",
@@ -380,11 +362,6 @@ func handleFile(conn net.Conn, req *Request) error {
 		}
 
 		// return directory listing
-		type DirListingPage struct {
-			Path  string
-			Files []string
-		}
-
 		entries, err := os.ReadDir(targetFilename)
 		if err != nil {
 			return err
@@ -396,7 +373,10 @@ func handleFile(conn net.Conn, req *Request) error {
 		}
 
 		var buf bytes.Buffer
-		err = dirListingTemplate.Execute(&buf, DirListingPage{
+		err = dirListingTemplate.Execute(&buf, struct {
+			Path  string
+			Files []string
+		}{
 			Path:  req.RequestLine.RequestTarget,
 			Files: files,
 		})
