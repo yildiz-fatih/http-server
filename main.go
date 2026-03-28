@@ -62,7 +62,10 @@ const dirListingTemplateHTML = `
 </html>
 `
 
-var root string
+var (
+	root string
+	port int
+)
 
 const SEPARATOR = "\r\n"
 
@@ -102,9 +105,8 @@ func main() {
 	}
 
 	flag.StringVar(&root, "root", cwd, "root directory to serve files from")
+	flag.IntVar(&port, "port", 8080, "port to listen on")
 	flag.Parse()
-
-	port := 8080
 
 	addr := fmt.Sprintf("0.0.0.0:%d", port)
 	listener, err := net.Listen("tcp", addr)
