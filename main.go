@@ -16,7 +16,7 @@ import (
 	"strings"
 )
 
-const errorTemplate = `
+const errorTemplateHTML = `
 <!DOCTYPE HTML>
 <html lang="en">
    <head>
@@ -36,7 +36,7 @@ const errorTemplate = `
 </html>
 `
 
-const dirListingTemplate = `
+const dirListingTemplateHTML = `
 <!DOCTYPE HTML>
 <html lang="en">
    <head>
@@ -79,6 +79,17 @@ type Response struct {
 	StatusCode string
 	Headers    map[string]string
 	Body       []byte
+}
+
+var (
+	errorTemplate      *template.Template
+	dirListingTemplate *template.Template
+)
+
+func init() {
+	// parse templates
+	errorTemplate = template.Must(template.New("error").Parse(errorTemplateHTML))
+	dirListingTemplate = template.Must(template.New("dirListing").Parse(dirListingTemplateHTML))
 }
 
 func main() {
@@ -316,13 +327,8 @@ func handleFile(conn net.Conn, req *Request) error {
 			Message string
 		}
 
-		tmpl, err := template.New("error").Parse(errorTemplate)
-		if err != nil {
-			return err
-		}
-
 		var buf bytes.Buffer
-		err = tmpl.Execute(&buf, ErrorPage{
+		err = errorTemplate.Execute(&buf, ErrorPage{
 			Code:    "404 Not Found",
 			Message: "The requested resource was not found on this server.",
 		})
@@ -372,11 +378,6 @@ func handleFile(conn net.Conn, req *Request) error {
 			Files []string
 		}
 
-		tmpl, err := template.New("listing").Parse(dirListingTemplate)
-		if err != nil {
-			return err
-		}
-
 		entries, err := os.ReadDir(targetFilename)
 		if err != nil {
 			return err
@@ -388,7 +389,7 @@ func handleFile(conn net.Conn, req *Request) error {
 		}
 
 		var buf bytes.Buffer
-		err = tmpl.Execute(&buf, DirListingPage{
+		err = dirListingTemplate.Execute(&buf, DirListingPage{
 			Path:  req.RequestLine.RequestTarget,
 			Files: files,
 		})
