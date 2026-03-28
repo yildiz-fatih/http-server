@@ -248,9 +248,12 @@ func writeResponse(conn net.Conn, res *Response) error {
 	}
 	out += "\r\n"
 
-	out += string(res.Body)
-
 	_, err := conn.Write([]byte(out))
+	if err != nil {
+		return err
+	}
+
+	_, err = conn.Write(res.Body)
 	return err
 }
 
