@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
+	"flag"
 	"fmt"
 	"html/template"
 	"io"
@@ -61,6 +62,8 @@ const dirListingTemplateHTML = `
 </html>
 `
 
+var root string
+
 const SEPARATOR = "\r\n"
 
 type Request struct {
@@ -93,6 +96,14 @@ func init() {
 }
 
 func main() {
+	cwd, err := os.Getwd()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	flag.StringVar(&root, "root", cwd, "root directory to serve files from")
+	flag.Parse()
+
 	port := 8080
 
 	addr := fmt.Sprintf("0.0.0.0:%d", port)
@@ -311,11 +322,6 @@ func handleEcho(conn net.Conn, req *Request) error {
 }
 
 func handleFile(conn net.Conn, req *Request) error {
-	root, err := os.Getwd()
-	if err != nil {
-		return err
-	}
-
 	targetFilename := filepath.Join(root, filepath.Clean(req.RequestLine.RequestTarget))
 
 	targetFileInfo, err := os.Stat(targetFilename)
