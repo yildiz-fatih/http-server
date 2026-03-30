@@ -144,10 +144,16 @@ func handleConnection(conn net.Conn) {
 			return
 		}
 
+		shouldClose := req.Headers["connection"] == "close"
+
 		res, err := routeRequest(req)
 		if err != nil {
 			log.Println(err)
 			return
+		}
+
+		if shouldClose {
+			res.Headers["connection"] = "close"
 		}
 
 		err = writeResponse(conn, res)
@@ -156,7 +162,7 @@ func handleConnection(conn net.Conn) {
 			return
 		}
 
-		if req.Headers["connection"] == "close" {
+		if shouldClose {
 			break
 		}
 	}
