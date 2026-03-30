@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const errorTemplateHTML = `
@@ -136,6 +137,7 @@ func handleConnection(conn net.Conn) {
 	reader := bufio.NewReader(conn)
 
 	for {
+		conn.SetReadDeadline(time.Now().Add(15 * time.Second)) // timeout for idle connections
 		log.Printf("New request from %s\n", conn.RemoteAddr().String())
 
 		req, err := parseRequest(reader)
