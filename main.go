@@ -144,7 +144,13 @@ func handleConnection(conn net.Conn) {
 			return
 		}
 
-		err = routeRequest(conn, req)
+		res, err := routeRequest(req)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+
+		err = writeResponse(conn, res)
 		if err != nil {
 			log.Println(err)
 			return
@@ -156,15 +162,24 @@ func handleConnection(conn net.Conn) {
 	}
 }
 
-func routeRequest(conn net.Conn, req *Request) error {
+func routeRequest(req *Request) (*Response, error) {
+	var res *Response
+	var err error
+
 	switch req.RequestLine.RequestTarget {
 	case "/ping":
-		return handlePing(conn, req)
+		res, err = handlePing(req)
 	case "/echo":
-		return handleEcho(conn, req)
+		res, err = handleEcho(req)
 	default:
-		return handleFile(conn, req)
+		res, err = handleFile(req)
 	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return res, nil
 }
 
 func parseRequest(reader *bufio.Reader) (*Request, error) {
@@ -290,27 +305,23 @@ func writeResponse(conn net.Conn, res *Response) error {
 	return err
 }
 
-func handlePing(conn net.Conn, req *Request) error {
+func handlePing(req *Request) (*Response, error) {
 	if req.RequestLine.HttpMethod != "GET" {
-		res := Response{
+		return &Response{
 			StatusCode: "405 Method Not Allowed",
 			Headers:    map[string]string{},
 			Body:       []byte{},
-		}
-
-		return writeResponse(conn, &res)
+		}, nil
 	}
 
-	res := Response{
+	return &Response{
 		StatusCode: "200 OK",
 		Headers:    map[string]string{"Content-Type": "text/plain"},
 		Body:       []byte("pong"),
-	}
-
-	return writeResponse(conn, &res)
+	}, nil
 }
 
-func handleEcho(conn net.Conn, req *Request) error {
+func handleEcho(req *Request) (*Response, error) {
 	resBody := ""
 	resBody += fmt.Sprintf("%s %s %s\r\n", req.RequestLine.HttpMethod, req.RequestLine.RequestTarget, req.RequestLine.HttpVersion)
 	for name, value := range req.Headers {
@@ -319,16 +330,14 @@ func handleEcho(conn net.Conn, req *Request) error {
 	resBody += "\r\n"
 	resBody += string(req.Body)
 
-	res := Response{
+	return &Response{
 		StatusCode: "200 OK",
 		Headers:    map[string]string{"Content-Type": "text/plain"},
 		Body:       []byte(resBody),
-	}
-
-	return writeResponse(conn, &res)
+	}, nil
 }
 
-func handleFile(conn net.Conn, req *Request) error {
+func handleFile(req *Request) (*Response, error) {
 	targetFilename := filepath.Join(root, filepath.Clean(req.RequestLine.RequestTarget))
 
 	targetFileInfo, err := os.Stat(targetFilename)
@@ -340,27 +349,25 @@ func handleFile(conn net.Conn, req *Request) error {
 			Message: "The requested resource was not found on this server.",
 		})
 		if err != nil {
-			return err
+			return nil, err
 		}
 
-		res := Response{
+		return &Response{
 			StatusCode: "404 Not Found",
 			Headers:    map[string]string{"Content-Type": "text/html"},
 			Body:       buf.Bytes(),
-		}
-		return writeResponse(conn, &res)
+		}, nil
 	}
 
 	if targetFileInfo.IsDir() {
 		// if you want a directory, put a slash at the end of the url
 		if !strings.HasSuffix(req.RequestLine.RequestTarget, "/") { // if you don't
 			// i'll redirect you to the url with the slash at the end
-			res := Response{
+			return &Response{
 				StatusCode: "301 Moved Permanently",
 				Headers:    map[string]string{"Location": req.RequestLine.RequestTarget + "/"},
 				Body:       []byte{},
-			}
-			return writeResponse(conn, &res)
+			}, nil
 		}
 
 		// check for index.html in the directory
@@ -368,21 +375,20 @@ func handleFile(conn net.Conn, req *Request) error {
 		if !errors.Is(err, os.ErrNotExist) {
 			content, err := os.ReadFile(filepath.Join(targetFilename, "index.html"))
 			if err != nil {
-				return err
+				return nil, err
 			}
 
-			res := Response{
+			return &Response{
 				StatusCode: "200 OK",
 				Headers:    map[string]string{"Content-Type": "text/html"},
 				Body:       content,
-			}
-			return writeResponse(conn, &res)
+			}, nil
 		}
 
 		// return directory listing
 		entries, err := os.ReadDir(targetFilename)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		var files []string
@@ -399,15 +405,14 @@ func handleFile(conn net.Conn, req *Request) error {
 			Files: files,
 		})
 		if err != nil {
-			return err
+			return nil, err
 		}
 
-		res := Response{
+		return &Response{
 			StatusCode: "200 OK",
 			Headers:    map[string]string{"Content-Type": "text/html"},
 			Body:       buf.Bytes(),
-		}
-		return writeResponse(conn, &res)
+		}, nil
 	} else {
 		contentType := mime.TypeByExtension(filepath.Ext(targetFilename))
 		if contentType == "" {
@@ -416,15 +421,13 @@ func handleFile(conn net.Conn, req *Request) error {
 
 		resBody, err := os.ReadFile(targetFilename)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
-		res := Response{
+		return &Response{
 			StatusCode: "200 OK",
 			Headers:    map[string]string{"Content-Type": contentType},
 			Body:       resBody,
-		}
-
-		return writeResponse(conn, &res)
+		}, nil
 	}
 }
