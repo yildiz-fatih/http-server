@@ -123,18 +123,36 @@ func main() {
 }
 
 func handleConnection(conn net.Conn) {
-	defer conn.Close()
+	// defer conn.Close()
+	defer func() {
+		log.Printf("Closing connection from %s", conn.RemoteAddr().String())
+		conn.Close()
+	}()
 
-	req, err := parseRequest(bufio.NewReader(conn))
-	if err != nil {
-		log.Println(err)
-		return
-	}
+	log.Printf("New connection from %s\n", conn.RemoteAddr().String())
 
-	err = routeRequest(conn, req)
-	if err != nil {
-		log.Println(err)
-		return
+	// prevent over-reading into the next request,
+	// by re-using the same reader for the all requests on the same connection
+	reader := bufio.NewReader(conn)
+
+	for {
+		log.Printf("New request from %s\n", conn.RemoteAddr().String())
+
+		req, err := parseRequest(reader)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+
+		err = routeRequest(conn, req)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+
+		if req.Headers["connection"] == "close" {
+			break
+		}
 	}
 }
 
