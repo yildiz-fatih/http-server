@@ -35,12 +35,16 @@ func parseRequestLine(reader *bufio.Reader) (*RequestLine, error) {
 		return nil, err
 	}
 
+	if !strings.HasSuffix(rawLine, SEPARATOR) {
+		return nil, fmt.Errorf("parsing error: request line missing CRLF")
+	}
+
 	trimmedLine := strings.TrimSuffix(rawLine, SEPARATOR)
 
 	parts := strings.Split(trimmedLine, " ")
 
 	if len(parts) != 3 {
-		return nil, fmt.Errorf("parsing error: split by single space failed")
+		return nil, fmt.Errorf("parsing error: malformed request line")
 	}
 
 	return &RequestLine{
