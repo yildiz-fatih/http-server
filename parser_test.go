@@ -7,6 +7,66 @@ import (
 	"testing"
 )
 
+func TestParseRequest(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		want        *Request
+		expectError bool
+	}{
+		{
+			name:  "valid GET request",
+			input: "GET /index.html HTTP/1.1\r\nHost: example.com\r\n\r\n",
+			want: &Request{
+				RequestLine: RequestLine{
+					HttpMethod:    "GET",
+					RequestTarget: "/index.html",
+					HttpVersion:   "HTTP/1.1",
+				},
+				Headers: map[string]string{"host": "example.com"},
+				Body:    nil,
+			},
+		},
+		{
+			name:  "valid POST request",
+			input: "POST /api/cats HTTP/1.1\r\nHost: example.com\r\nContent-Length: 11\r\n\r\nhello world",
+			want: &Request{
+				RequestLine: RequestLine{
+					HttpMethod:    "POST",
+					RequestTarget: "/api/cats",
+					HttpVersion:   "HTTP/1.1",
+				},
+				Headers: map[string]string{
+					"host":           "example.com",
+					"content-length": "11",
+				},
+				Body: []byte("hello world"),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reader := bufio.NewReader(strings.NewReader(tt.input))
+
+			got, err := parseRequest(reader)
+			if tt.expectError {
+				if err == nil {
+					t.Fatalf("expected an error")
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+
+				if !reflect.DeepEqual(*tt.want, *got) {
+					t.Errorf("want %+v, got %+v", *tt.want, *got)
+				}
+			}
+		})
+	}
+}
+
 func TestParseRequestLine(t *testing.T) {
 	tests := []struct {
 		name        string
