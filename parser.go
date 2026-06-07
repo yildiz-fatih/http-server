@@ -63,13 +63,14 @@ func parseHeaders(reader *bufio.Reader) (map[string]string, error) {
 			return nil, err
 		}
 
-		trimmedLine, _, found := strings.Cut(rawLine, SEPARATOR)
-		if !found {
-			return nil, fmt.Errorf("parsing error: no separator found")
+		if !strings.HasSuffix(rawLine, SEPARATOR) {
+			return nil, fmt.Errorf("parsing error: header is missing CRLF")
 		}
 
+		trimmedLine := strings.TrimSuffix(rawLine, SEPARATOR)
+
 		if len(trimmedLine) == 0 {
-			break
+			break // empty line indicates end of headers
 		}
 
 		fieldName, fieldValue, found := strings.Cut(trimmedLine, ":")

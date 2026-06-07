@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -71,6 +72,82 @@ func TestParseRequestLine(t *testing.T) {
 
 				if tt.want != *got {
 					t.Errorf("want %+v, got %+v", tt.want, *got)
+				}
+			}
+		})
+	}
+}
+
+func TestParseHeaders(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		want        map[string]string
+		expectError bool
+	}{
+		{
+			name:  "single header",
+			input: "Host: example.com\r\n\r\n",
+			want:  map[string]string{"host": "example.com"},
+		},
+		{
+			name:  "no headers",
+			input: "\r\n",
+			want:  map[string]string{},
+		},
+		{
+			name:  "duplicate header names get combined",
+			input: "Accept: text/html\r\nAccept: application/json\r\n\r\n",
+			want:  map[string]string{"accept": "text/html, application/json"},
+		},
+		{
+			name:  "header names get lowercased",
+			input: "HOST: example.com\r\n\r\n",
+			want:  map[string]string{"host": "example.com"},
+		},
+		{
+			name:  "extra whitespace gets trimmed",
+			input: "Host:   example.com   \r\n\r\n",
+			want:  map[string]string{"host": "example.com"},
+		},
+		{
+			name:        "error on missing carriage return",
+			input:       "Host: example.com\n",
+			expectError: true,
+		},
+		{
+			name:        "error on missing newline",
+			input:       "Host: example.com",
+			expectError: true,
+		},
+		{
+			name:        "error on malformed header (no colon)",
+			input:       "Host example.com\r\n",
+			expectError: true,
+		},
+		{
+			name:        "error on empty input",
+			input:       "",
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reader := bufio.NewReader(strings.NewReader(tt.input))
+
+			got, err := parseHeaders(reader)
+			if tt.expectError {
+				if err == nil {
+					t.Fatalf("expected an error")
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+
+				if !reflect.DeepEqual(tt.want, got) {
+					t.Errorf("want %+v, got %+v", tt.want, got)
 				}
 			}
 		})
