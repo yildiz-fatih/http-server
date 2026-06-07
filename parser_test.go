@@ -153,3 +153,59 @@ func TestParseHeaders(t *testing.T) {
 		})
 	}
 }
+
+func TestParseBody(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		headers     map[string]string
+		want        []byte
+		expectError bool
+	}{
+		{
+			name:    "no content-length header returns nil body",
+			input:   "",
+			headers: map[string]string{},
+			want:    nil,
+		},
+		{
+			name:    "content-length header with valid body returns body bytes",
+			input:   "hello world",
+			headers: map[string]string{"content-length": "11"},
+			want:    []byte("hello world"),
+		},
+		{
+			name:        "non-numeric content-length header returns error",
+			input:       "",
+			headers:     map[string]string{"content-length": "abc"},
+			expectError: true,
+		},
+		{
+			name:        "body shorter than content-length returns error",
+			input:       "hello world",
+			headers:     map[string]string{"content-length": "100"},
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reader := bufio.NewReader(strings.NewReader(tt.input))
+
+			got, err := parseBody(reader, tt.headers)
+			if tt.expectError {
+				if err == nil {
+					t.Fatalf("expected an error")
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+
+				if !reflect.DeepEqual(tt.want, got) {
+					t.Errorf("want %+v, got %+v", tt.want, got)
+				}
+			}
+		})
+	}
+}
