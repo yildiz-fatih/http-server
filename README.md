@@ -1,6 +1,6 @@
 # http-server
 
-An HTTP/1.1 server written in Go, built over TCP. Point it at a directory and it serves the files over HTTP.
+HTTP/1.1 server written in Go, built over TCP. Point it at a directory and it serves the files over HTTP.
 
 This is a learning project. The goal is to understand how HTTP works over TCP.
 
